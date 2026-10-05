@@ -1,0 +1,1259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlateProfit — Free Recipe Cost Calculator for Home Bakeries | Food Cost & Pricing Studio</title>
+<meta name="description" content="PlateProfit is a free recipe cost calculator and food cost calculator for home bakery sellers. Build an ingredient price library, cost any recipe per serving, compare cost-plus vs market vs premium pricing strategies, and print professional stall labels. Unlimited free usage, no signup.">
+<meta name="keywords" content="recipe cost calculator, food cost calculator for home bakery, how to price homemade food to sell, recipe pricing calculator, cottage food pricing, home bakery cost calculator, food cost percentage calculator, printable food stall labels">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: { ink: '#131009', inkdeep: '#0C0A05', gold: '#FBBF24', mint: '#34D399', cream: '#F7EFDB', parch: '#1D170C' },
+      fontFamily: { ledger: ['Georgia', '"Times New Roman"', 'serif'], hand: ['"Segoe Print"', '"Comic Sans MS"', 'cursive'] }
+    }
+  }
+}
+</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { -webkit-font-smoothing: antialiased; background: #131009; color: #F7EFDB; }
+  .ledger-lines { background-image: repeating-linear-gradient(to bottom, transparent 0 31px, rgba(251,191,36,.08) 31px 32px); }
+  .card { background: #1D170C; border: 1px solid rgba(251,191,36,.22); border-radius: 14px; }
+  .card-hi { border-color: rgba(251,191,36,.55); box-shadow: 0 0 0 1px rgba(251,191,36,.25), 0 12px 40px -18px rgba(251,191,36,.45); }
+  .field { background: #0C0A05; border: 1px solid rgba(251,191,36,.25); color: #F7EFDB; border-radius: 10px; padding: 10px 12px; width: 100%; font-size: 14px; }
+  .field:focus { outline: 2px solid #FBBF24; border-color: #FBBF24; }
+  select.field option { background: #0C0A05; }
+  .btn-gold { background: #FBBF24; color: #131009; font-weight: 800; border-radius: 10px; padding: 10px 18px; font-size: 14px; transition: transform .08s, box-shadow .15s; }
+  .btn-gold:hover { box-shadow: 0 6px 24px -6px rgba(251,191,36,.6); }
+  .btn-gold:active { transform: translateY(1px); }
+  .btn-ghost { border: 1px solid rgba(251,191,36,.4); color: #FBBF24; font-weight: 700; border-radius: 10px; padding: 10px 18px; font-size: 14px; }
+  .btn-ghost:hover { background: rgba(251,191,36,.08); }
+  .strat-tab { border: 1px solid rgba(251,191,36,.25); border-radius: 12px; padding: 12px; cursor: pointer; transition: all .15s; }
+  .strat-tab.active { border-color: #FBBF24; background: rgba(251,191,36,.1); box-shadow: 0 0 0 1px #FBBF24; }
+  .stamp { display: inline-block; border: 2.5px solid #34D399; color: #34D399; border-radius: 8px; padding: 3px 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; font-size: 11px; transform: rotate(-2deg); background: rgba(52,211,153,.08); }
+  .ticket { background: #F7EFDB; color: #131009; border-radius: 10px; position: relative; }
+  .ticket::before, .ticket::after { content: ''; position: absolute; top: 50%; width: 18px; height: 18px; border-radius: 50%; background: #131009; transform: translateY(-50%); }
+  .ticket::before { left: -9px; } .ticket::after { right: -9px; }
+  .ticket-perf { border-left: 2px dashed rgba(19,16,9,.3); }
+  .num { font-variant-numeric: tabular-nums; }
+  details.faq summary::-webkit-details-marker { display: none; }
+  details.faq[open] .faq-plus { transform: rotate(45deg); }
+  .faq-plus { transition: transform .2s; display: inline-block; }
+  #seo-article h2 { color: #FBBF24; font-family: Georgia, serif; font-size: 1.5rem; margin: 2.2rem 0 .9rem; font-weight: 700; }
+  #seo-article h3 { color: #34D399; font-size: 1.15rem; margin: 1.6rem 0 .6rem; font-weight: 700; }
+  #seo-article p { margin: .8rem 0; line-height: 1.75; color: #EDE3C8; }
+  #seo-article ul { margin: .8rem 0; padding-left: 1.4rem; list-style: disc; color: #EDE3C8; line-height: 1.75; }
+  #seo-article li { margin: .35rem 0; }
+  #seo-article strong { color: #F7EFDB; }
+  @media print {
+    .no-print { display: none !important; }
+    body { background: #fff !important; color: #000 !important; }
+    .ticket { break-inside: avoid; border: 2px solid #000; }
+    .ticket::before, .ticket::after { display: none; }
+    #print-area { display: block !important; }
+  }
+</style>
+<script id="v3-plateprofit-recipe-costing-lib">
+'use strict';
+/**
+ * PlateProfit — recipe costing studio (pure logic, no DOM).
+ * Ingredient price library -> recipe lines -> batch cost -> per-serving
+ * cost -> pricing-strategy suggestions -> printable stall labels.
+ * All money figures are plain numbers; formatting happens in fmtMoney.
+ */
+
+var PLATEPROFIT = PLATEPROFIT || {};
+
+/* ------------------------------------------------------------------ */
+/* Units                                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Base families: 'w' = weight (base gram), 'v' = volume (base millilitre),
+ * 'c' = count (base item). All conversions are multiplicative.
+ */
+PLATEPROFIT.UNITS = {
+  g:       { fam: 'w', toBase: 1,              base: 'g'  },
+  kg:      { fam: 'w', toBase: 1000,           base: 'g'  },
+  oz:      { fam: 'w', toBase: 28.349523125,  base: 'g'  },
+  lb:      { fam: 'w', toBase: 453.59237,      base: 'g'  },
+  ml:      { fam: 'v', toBase: 1,              base: 'ml' },
+  l:       { fam: 'v', toBase: 1000,           base: 'ml' },
+  tsp:     { fam: 'v', toBase: 4.92892159375,  base: 'ml' },
+  tbsp:    { fam: 'v', toBase: 14.78676478125, base: 'ml' },
+  cup:     { fam: 'v', toBase: 236.5882365,    base: 'ml' },
+  'fl oz': { fam: 'v', toBase: 29.5735295625, base: 'ml' },
+  item:    { fam: 'c', toBase: 1,              base: 'item' },
+  pcs:     { fam: 'c', toBase: 1,              base: 'item' }
+};
+
+PLATEPROFIT.CURRENCIES = [
+  { code: 'USD', symbol: '$',  label: 'USD — $'  },
+  { code: 'EUR', symbol: '€',  label: 'EUR — €'  },
+  { code: 'INR', symbol: '₹',  label: 'INR — ₹'  },
+  { code: 'GBP', symbol: '£',  label: 'GBP — £'  },
+  { code: 'JPY', symbol: '¥',  label: 'JPY — ¥'  },
+  { code: 'BRL', symbol: 'R$', label: 'BRL — R$' },
+  { code: 'CAD', symbol: 'C$', label: 'CAD — C$' },
+  { code: 'AUD', symbol: 'A$', label: 'AUD — A$' },
+  { code: 'MXN', symbol: 'MX$',label: 'MXN — MX$' },
+  { code: 'AED', symbol: 'د.إ', label: 'AED — د.إ' }
+];
+
+/**
+ * Normalize a quantity to its family base unit.
+ * Returns { qty, baseUnit, fam } or null on bad input.
+ */
+function unitBaseQty(qty, unit) {
+  var q = Number(qty);
+  if (!isFinite(q) || q < 0) return null;
+  var u = PLATEPROFIT.UNITS[String(unit || '').trim()];
+  if (!u) return null;
+  return { qty: q * u.toBase, baseUnit: u.base, fam: u.fam };
+}
+
+/**
+ * Ingredient issues for library validation. Never throws.
+ */
+function ingredientIssues(name, price, qty, unit) {
+  var issues = [];
+  if (!String(name || '').trim()) issues.push('name is required');
+  var p = Number(price);
+  if (!isFinite(p) || p < 0) issues.push('pack price must be a number ≥ 0');
+  var q = Number(qty);
+  if (!isFinite(q) || q <= 0) issues.push('pack quantity must be a number > 0');
+  if (!PLATEPROFIT.UNITS[String(unit || '').trim()]) issues.push('pick a valid pack unit');
+  return issues;
+}
+
+/**
+ * Cost per base unit (per g / per ml / per item) for a library ingredient.
+ * Returns null when the row cannot be priced.
+ */
+function costPerBaseUnit(packPrice, packQty, packUnit) {
+  if (ingredientIssues('x', packPrice, packQty, packUnit).length > 0) return null;
+  var n = unitBaseQty(packQty, packUnit);
+  if (!n || n.qty <= 0) return null;
+  return Number(packPrice) / n.qty;
+}
+
+/**
+ * Cost of one recipe line: amount (in `unit`) of an ingredient whose
+ * cost-per-base-unit is `cpb` with base unit `baseUnit`.
+ * Returns null when units are incompatible or inputs invalid.
+ */
+function lineCost(cpb, baseUnit, amount, unit) {
+  if (!isFinite(Number(cpb)) || Number(cpb) < 0) return null;
+  var n = unitBaseQty(amount, unit);
+  var ref = PLATEPROFIT.UNITS[String(baseUnit || '').trim()];
+  if (!n || !ref) return null;
+  if (n.fam !== ref.fam) return null; // e.g. cups of flour priced per gram of a solid — blocked
+  return Number(cpb) * n.qty;
+}
+
+/**
+ * Recipe-line validation. `libRow` may be null (ad-hoc line without price).
+ */
+function recipeLineIssues(libRow, amount, unit) {
+  var issues = [];
+  if (!libRow) issues.push('pick an ingredient from your library');
+  else if (!isFinite(Number(libRow.cpb)) || Number(libRow.cpb) < 0) issues.push('ingredient has no valid price');
+  var n = unitBaseQty(amount, unit);
+  if (!n) issues.push('amount and unit must be valid');
+  else if (libRow) {
+    var ref = PLATEPROFIT.UNITS[String(libRow.baseUnit || '').trim()];
+    if (ref && n.fam !== ref.fam) issues.push('unit family mismatch with this ingredient');
+  }
+  return issues;
+}
+
+/* ------------------------------------------------------------------ */
+/* Batch / serving costs                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Compute the batch cost from priced lines.
+ * lines: [{ name, cost }] where cost is a number ≥ 0 (may be null/skipped).
+ * wastePct: extra % of ingredient cost lost to trimming/spoilage.
+ * labor: { minutes, hourlyRate } — both optional.
+ * Returns { ingredientCost, wasteCost, laborCost, total, skipped }.
+ */
+function batchCost(lines, wastePct, labor) {
+  lines = lines || [];
+  var wp = Number(wastePct);
+  if (!isFinite(wp) || wp < 0) wp = 0;
+  if (wp > 200) wp = 200; // sanity cap
+  var ingredientCost = 0;
+  var skipped = 0;
+  for (var i = 0; i < lines.length; i++) {
+    var raw = lines[i] && lines[i].cost;
+    if (raw === null || raw === undefined) { skipped++; continue; }
+    var c = Number(raw);
+    if (isFinite(c) && c >= 0) ingredientCost += c;
+    else skipped++;
+  }
+  var wasteCost = ingredientCost * (wp / 100);
+  var minutes = labor ? Number(labor.minutes) : 0;
+  var rate = labor ? Number(labor.hourlyRate) : 0;
+  var laborCost = 0;
+  if (isFinite(minutes) && minutes > 0 && isFinite(rate) && rate > 0) {
+    laborCost = (minutes / 60) * rate;
+  }
+  var total = ingredientCost + wasteCost + laborCost;
+  return {
+    ingredientCost: ingredientCost,
+    wasteCost: wasteCost,
+    laborCost: laborCost,
+    total: total,
+    skipped: skipped
+  };
+}
+
+/**
+ * Per-serving cost. Returns null for empty/invalid recipes or zero servings.
+ */
+function perServing(total, servings) {
+  var t = Number(total);
+  var s = Number(servings);
+  if (!isFinite(t) || t < 0) return null;
+  if (!isFinite(s) || s <= 0) return null;
+  return t / s;
+}
+
+/* ------------------------------------------------------------------ */
+/* Pricing strategies                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Margin on the SELLING price (what sellers actually keep):
+ * marginPct = profit / price * 100.
+ * markupPct is on COST: price = cost * (1 + markup/100).
+ */
+function marginFromPrice(price, cost) {
+  var p = Number(price);
+  var c = Number(cost);
+  if (!isFinite(p) || p <= 0) return null;
+  if (!isFinite(c) || c < 0) return null;
+  var profit = p - c;
+  return {
+    profit: profit,
+    marginPct: (profit / p) * 100,
+    markupPct: c > 0 ? (profit / c) * 100 : Infinity
+  };
+}
+
+function priceFromMargin(cost, marginPct) {
+  var c = Number(cost);
+  var m = Number(marginPct);
+  if (!isFinite(c) || c < 0) return null;
+  if (!isFinite(m) || m >= 100) return null;
+  if (m < 0) return null;
+  return c / (1 - m / 100);
+}
+
+function priceFromMarkup(cost, markupPct) {
+  var c = Number(cost);
+  var m = Number(markupPct);
+  if (!isFinite(c) || c < 0) return null;
+  if (!isFinite(m)) return null;
+  if (m < 0) m = 0;
+  return c * (1 + m / 100);
+}
+
+/**
+ * Psychological price rounding.
+ * mode: 'none' | 'whole' | 'point99' | 'nearest50'.
+ * JPY-style zero-decimal currencies can pass mode 'whole'.
+ */
+function roundPrice(price, mode) {
+  var p = Number(price);
+  if (!isFinite(p) || p < 0) return null;
+  if (mode === 'whole') return Math.round(p);
+  if (mode === 'point99') {
+    var r = Math.floor(p) + 0.99;
+    return r < p ? r + 1 : r;
+  }
+  if (mode === 'nearest50') return Math.round(p / 50) * 50;
+  return Math.round(p * 100) / 100;
+}
+
+/**
+ * Cost-plus strategy: price = cost * (1 + markup). Default 300% markup is
+ * the classic food-industry "3x rule" for home bakeries.
+ */
+function costPlusSuggest(cost, markupPct, roundMode) {
+  var c = Number(cost);
+  if (!isFinite(c) || c <= 0) return null;
+  var m = isFinite(Number(markupPct)) ? Number(markupPct) : 300;
+  var raw = priceFromMarkup(c, m);
+  if (raw === null) return null;
+  var price = roundPrice(raw, roundMode || 'none');
+  var mg = marginFromPrice(price, c);
+  return { strategy: 'cost-plus', markupPct: m, rawPrice: raw, price: price, marginPct: mg.marginPct, profit: mg.profit };
+}
+
+/**
+ * Market strategy: seller enters a target market/competitor price;
+ * returns the implied margin and whether it clears the margin floor.
+ */
+function marketSuggest(cost, marketPrice, roundMode, minMarginPct) {
+  var c = Number(cost);
+  var p = Number(marketPrice);
+  if (!isFinite(c) || c <= 0) return null;
+  if (!isFinite(p) || p <= 0) return null;
+  var minM = isFinite(Number(minMarginPct)) ? Number(minMarginPct) : 40;
+  var price = roundPrice(p, roundMode || 'none');
+  var mg = marginFromPrice(price, c);
+  return {
+    strategy: 'market',
+    rawPrice: p,
+    price: price,
+    marginPct: mg.marginPct,
+    profit: mg.profit,
+    minMarginPct: minM,
+    clearsFloor: mg.marginPct >= minM,
+    floorShortfall: mg.marginPct < minM ? (minM - mg.marginPct) : 0
+  };
+}
+
+/**
+ * Premium strategy: a higher markup justified by branding, packaging,
+ * custom work or niche positioning.
+ */
+function premiumSuggest(cost, markupPct, roundMode) {
+  var c = Number(cost);
+  if (!isFinite(c) || c <= 0) return null;
+  var m = isFinite(Number(markupPct)) ? Number(markupPct) : 500;
+  var raw = priceFromMarkup(c, m);
+  if (raw === null) return null;
+  var price = roundPrice(raw, roundMode || 'none');
+  var mg = marginFromPrice(price, c);
+  return { strategy: 'premium', markupPct: m, rawPrice: raw, price: price, marginPct: mg.marginPct, profit: mg.profit };
+}
+
+/**
+ * Compare all three strategies and pick a recommendation:
+ * market wins if it clears the margin floor (competitive + healthy),
+ * otherwise cost-plus (safe default).
+ * Returns { costPlus, market, premium, recommended } — null entries when
+ * that strategy cannot be computed.
+ */
+function suggestPrices(cost, opts) {
+  opts = opts || {};
+  var cp = costPlusSuggest(cost, opts.costPlusMarkup, opts.roundMode);
+  var mk = (opts.marketPrice !== undefined && opts.marketPrice !== null && opts.marketPrice !== '')
+    ? marketSuggest(cost, opts.marketPrice, opts.roundMode, opts.minMargin)
+    : null;
+  var pr = premiumSuggest(cost, opts.premiumMarkup, opts.roundMode);
+  var recommended = null;
+  if (mk && mk.clearsFloor) recommended = 'market';
+  else if (cp) recommended = 'cost-plus';
+  else if (pr) recommended = 'premium';
+  return { costPlus: cp, market: mk, premium: pr, recommended: recommended };
+}
+
+/* ------------------------------------------------------------------ */
+/* Stall labels                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Escape HTML for label text (used by the UI when injecting strings).
+ */
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Build the data model for printable stall labels.
+ * perServingCost + price feed the "margin per unit" line.
+ */
+function labelModel(recipeName, perServingCost, price, servings, ingredientNames, notes) {
+  var names = (ingredientNames || []).filter(function (n) { return String(n || '').trim(); });
+  var mg = (isFinite(Number(price)) && isFinite(Number(perServingCost)))
+    ? marginFromPrice(price, perServingCost)
+    : null;
+  return {
+    recipeName: String(recipeName || 'Unnamed Recipe'),
+    perServingCost: isFinite(Number(perServingCost)) ? Number(perServingCost) : null,
+    price: isFinite(Number(price)) ? Number(price) : null,
+    servings: isFinite(Number(servings)) && Number(servings) > 0 ? Number(servings) : null,
+    ingredientCount: names.length,
+    ingredientsPreview: names.slice(0, 6).join(', ') + (names.length > 6 ? '…' : ''),
+    profitPerUnit: mg ? mg.profit : null,
+    marginPct: mg ? mg.marginPct : null,
+    notes: String(notes || '')
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Formatting                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Money formatter. `symbol` is the currency symbol; `decimals` defaults to 2.
+ */
+function fmtMoney(amount, symbol, decimals) {
+  var sym = symbol == null ? '$' : String(symbol);
+  var d = decimals === undefined ? 2 : Number(decimals);
+  if (!isFinite(d) || d < 0) d = 2;
+  d = Math.min(Math.round(d), 8);
+  var a = Number(amount);
+  if (!isFinite(a)) return sym + '0.' + new Array(d + 1).join('0');
+  var fixed = Math.abs(a).toFixed(d);
+  var parts = fixed.split('.');
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return (a < 0 ? '-' : '') + sym + parts.join('.');
+}
+
+/**
+ * Compact per-unit display: 0.0042 $/g -> "$4.20 / kg".
+ */
+function nicePerBase(cpb, baseUnit, symbol) {
+  if (!isFinite(Number(cpb)) || Number(cpb) < 0) return null;
+  var v = Number(cpb);
+  var u = String(baseUnit || '').trim();
+  if (u === 'g' && v * 1000 >= 0.01) return { value: v * 1000, label: 'per kg', text: fmtMoney(v * 1000, symbol) + ' / kg' };
+  if (u === 'ml' && v * 1000 >= 0.01) return { value: v * 1000, label: 'per L', text: fmtMoney(v * 1000, symbol) + ' / L' };
+  if (u === 'g') return { value: v, label: 'per g', text: fmtMoney(v, symbol, 4) + ' / g' };
+  if (u === 'ml') return { value: v, label: 'per ml', text: fmtMoney(v, symbol, 4) + ' / ml' };
+  if (u === 'item' && v < 0.01) return { value: v * 100, label: 'per 100 items', text: fmtMoney(v * 100, symbol) + ' / 100 pcs' };
+  return { value: v, label: 'per item', text: fmtMoney(v, symbol) + ' / item' };
+}
+
+/* ------------------------------------------------------------------ */
+/* Library helpers (pure transforms over plain arrays)                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Add an ingredient row to the library array (pure; returns new array).
+ * Returns { library, error } — error is null on success.
+ */
+function libraryAdd(library, row) {
+  library = library || [];
+  var issues = ingredientIssues(row.name, row.price, row.qty, row.unit);
+  if (issues.length) return { library: library, error: issues.join('; ') };
+  var n = unitBaseQty(row.qty, row.unit);
+  var entry = {
+    id: 'ing_' + Date.now() + '_' + Math.floor(Math.random() * 1e6),
+    name: String(row.name).trim(),
+    price: Number(row.price),
+    qty: Number(row.qty),
+    unit: String(row.unit).trim(),
+    cpb: Number(row.price) / n.qty,
+    baseUnit: n.baseUnit
+  };
+  return { library: library.concat([entry]), error: null };
+}
+
+function libraryRemove(library, id) {
+  return (library || []).filter(function (r) { return r.id !== id; });
+}
+
+function libraryFind(library, id) {
+  var rows = library || [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].id === id) return rows[i];
+  }
+  return null;
+}
+
+// Exports for Node tests.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    PLATEPROFIT: PLATEPROFIT,
+    unitBaseQty: unitBaseQty,
+    ingredientIssues: ingredientIssues,
+    costPerBaseUnit: costPerBaseUnit,
+    lineCost: lineCost,
+    recipeLineIssues: recipeLineIssues,
+    batchCost: batchCost,
+    perServing: perServing,
+    marginFromPrice: marginFromPrice,
+    priceFromMargin: priceFromMargin,
+    priceFromMarkup: priceFromMarkup,
+    roundPrice: roundPrice,
+    costPlusSuggest: costPlusSuggest,
+    marketSuggest: marketSuggest,
+    premiumSuggest: premiumSuggest,
+    suggestPrices: suggestPrices,
+    escHtml: escHtml,
+    labelModel: labelModel,
+    fmtMoney: fmtMoney,
+    nicePerBase: nicePerBase,
+    libraryAdd: libraryAdd,
+    libraryRemove: libraryRemove,
+    libraryFind: libraryFind
+  };
+}
+
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I calculate the cost of a recipe for my home bakery?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "List every ingredient with the exact amount your recipe uses, then divide what you paid for each ingredient pack by the pack size to get a per-gram or per-millilitre cost. Multiply that unit cost by the amount used in the recipe and add the lines up. Divide the batch total by the number of servings for your per-serving food cost. PlateProfit automates all of this: you enter each ingredient once into the price library, build recipes from it, and the recipe cost calculator shows batch cost and per-serving cost instantly, including waste and labour if you add them."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is a good food cost percentage for homemade food to sell?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Most profitable home bakeries and cottage food businesses aim for a food cost percentage (ingredient cost divided by selling price) of 25 to 35 percent. That leaves 65 to 75 percent of the price to cover labour, packaging, fees, and profit. If your food cost percentage climbs above 40 percent, your margin is too thin to survive a bad week. Use PlateProfit's pricing panel to see your implied food cost percentage live as you test different prices."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I price homemade food to sell — what margin should I aim for?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Start from your true per-serving cost, then pick a strategy. Cost-plus pricing multiplies cost by a markup (the classic bakery rule is 3x, i.e. 300 percent markup, which equals a 66.7 percent margin on price). Market pricing starts from what competitors charge and checks that the implied margin clears your floor, usually 40 percent. Premium pricing uses a higher markup for branded, custom, or niche products. PlateProfit compares all three side by side and recommends the best one for your numbers."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Should I include labour, packaging, and waste in my recipe cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Ingredients are often only half the true cost of a homemade product. Add a waste allowance of 5 to 10 percent for trimming, testing, and spoilage; add your labour time at a fair hourly rate; and do not forget packaging, labels, market-stall fees, and payment processing. PlateProfit has built-in waste and labour fields so these costs flow straight into your per-serving cost instead of being an afterthought."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What should go on a homemade food stall label?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A good stall label shows the product name, the price (large and readable from a few steps away), the net weight or serving count, the full ingredient list, and any allergen warnings such as contains wheat, eggs, milk, or nuts. Many cottage food rules also require a 'made in a home kitchen' statement. PlateProfit generates printable ticket-style labels with the product name, price, servings, ingredients, and your custom notes, formatted to print cleanly on one page."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is PlateProfit free to use?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. PlateProfit is completely free with unlimited usage. There is no signup, no paywall, no watermark, and no limit on ingredients, recipes, or labels. Your ingredient price library is saved in your own browser with local storage, and every calculation happens on your device, so your recipes and costs never leave your computer."
+      }
+    }
+  ]
+}
+</script>
+</head>
+<body id="top" class="min-h-screen">
+
+<!-- ============ STICKY HEADER ============ -->
+<header class="no-print sticky top-0 z-50 border-b border-[rgba(251,191,36,.25)]" style="background:rgba(12,10,5,.95);backdrop-filter:blur(8px)">
+  <div class="mx-auto max-w-6xl px-4 sm:px-6 h-16 flex items-center justify-between">
+    <a href="#top" class="flex items-center gap-2.5">
+      <svg width="34" height="34" viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="20" cy="20" r="17" fill="none" stroke="#FBBF24" stroke-width="3"/>
+        <circle cx="20" cy="20" r="11" fill="none" stroke="#34D399" stroke-width="2.5"/>
+        <path d="M20 9 L20 14 M20 26 L20 31 M9 20 L14 20 M26 20 L31 20" stroke="#FBBF24" stroke-width="2.5" stroke-linecap="round"/>
+        <text x="20" y="24.5" text-anchor="middle" font-family="Georgia,serif" font-size="13" font-weight="bold" fill="#FBBF24">$</text>
+      </svg>
+      <span class="text-2xl font-extrabold tracking-tight font-ledger" style="color:#FBBF24">PlateProfit</span>
+    </a>
+    <nav class="flex items-center gap-5 text-sm font-semibold">
+      <a href="#top" class="hover:text-[#FBBF24]" style="color:#F7EFDB">Home</a>
+      <a href="https://fixoraa.tech" class="hover:text-[#FBBF24]" style="color:#F7EFDB">More Tools</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="no-print mx-auto max-w-6xl px-4 sm:px-6 pt-10 pb-2 text-center">
+  <div class="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold tracking-widest uppercase border" style="border-color:rgba(52,211,153,.5);color:#34D399;background:rgba(52,211,153,.08)">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 6L9 17l-5-5" stroke="#34D399" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Unlimited Free Usage
+  </div>
+  <h1 class="font-ledger text-4xl sm:text-5xl font-bold mt-5 leading-tight" style="color:#F7EFDB">Recipe Costing Studio<br class="sm:hidden"> for <span style="color:#FBBF24">Home Food Sellers</span></h1>
+  <p class="mt-4 max-w-2xl mx-auto text-[15px] leading-relaxed" style="color:#CBBE9E">Build your ingredient price library, cost every recipe to the cent, pick a pricing strategy with real margin math, and print stall-ready labels — all in one free studio.</p>
+</section>
+
+<!-- TOP AD (verbatim) -->
+<div class="no-print mx-auto max-w-6xl px-4 sm:px-6 pt-4" role="complementary" aria-label="Advertisement">
+  <div class="mx-auto text-center" style="max-width:728px">
+    <span class="block text-[10px] tracking-[0.18em] uppercase text-slate-400 mb-1.5">Advertisement</span>
+    <div class="flex justify-center overflow-hidden">
+      <div class="origin-top scale-[0.44] sm:scale-100 shrink-0">
+        <script>
+          atOptions = { 'key' : '4e68ac77881c17fe128a46565d9a4e8c', 'format' : 'iframe', 'height' : 90, 'width' : 728, 'params' : {} };
+        </script>
+        <script src="https://www.highrevenueformat.com/4e68ac77881c17fe128a46565d9a4e8c/invoke.js"></script>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TOOL ============ -->
+<main class="no-print mx-auto max-w-6xl px-4 sm:px-6 py-8">
+
+  <!-- Studio toolbar -->
+  <div class="card p-4 sm:p-5 mb-6 flex flex-wrap items-center gap-4 justify-between">
+    <div class="flex items-center gap-3">
+      <span class="text-xs font-bold tracking-widest uppercase" style="color:#CBBE9E">Studio currency</span>
+      <select id="currency-select" class="field !w-auto text-sm font-bold"></select>
+    </div>
+    <div class="text-xs" style="color:#8f8468">Your library auto-saves in this browser · nothing is uploaded</div>
+  </div>
+
+  <div class="grid lg:grid-cols-2 gap-6">
+
+    <!-- ===== 01 · INGREDIENT PRICE LIBRARY ===== -->
+    <section class="card card-hi p-5 sm:p-6" aria-label="Ingredient price library">
+      <div class="flex items-baseline gap-3 mb-1">
+        <span class="font-ledger text-3xl font-bold" style="color:#FBBF24">01</span>
+        <h2 class="font-ledger text-2xl font-bold">Ingredient Price Library</h2>
+      </div>
+      <p class="text-sm mb-5" style="color:#CBBE9E">Enter each ingredient once — what the pack cost and how big it was. PlateProfit derives the per-gram / per-ml / per-item cost.</p>
+      <div class="grid grid-cols-2 gap-3">
+        <input id="lib-name" class="field col-span-2 sm:col-span-1" placeholder="Ingredient name — e.g. All-purpose flour" maxlength="60" aria-label="Ingredient name">
+        <div class="grid grid-cols-3 gap-2 col-span-2 sm:col-span-1">
+          <input id="lib-price" class="field num" type="number" min="0" step="0.01" placeholder="Pack price" aria-label="Pack price">
+          <input id="lib-qty" class="field num" type="number" min="0" step="0.01" placeholder="Pack size" aria-label="Pack size">
+          <select id="lib-unit" class="field" aria-label="Pack unit"></select>
+        </div>
+      </div>
+      <div class="flex gap-3 mt-3">
+        <button id="lib-add" class="btn-gold flex-1">+ Add to library</button>
+        <button id="lib-clear" class="btn-ghost">Clear all</button>
+      </div>
+      <div id="lib-error" class="text-sm mt-2 hidden" style="color:#F87171" role="alert"></div>
+      <div id="lib-list" class="mt-5 space-y-2 max-h-72 overflow-y-auto pr-1"></div>
+      <div id="lib-empty" class="mt-5 text-sm border border-dashed rounded-xl p-4 text-center" style="border-color:rgba(251,191,36,.3);color:#8f8468">
+        Library is empty. Add flour, sugar, butter, eggs… then build recipes from them.
+      </div>
+    </section>
+
+    <!-- ===== 02 · RECIPE BUILDER ===== -->
+    <section class="card p-5 sm:p-6" aria-label="Recipe builder">
+      <div class="flex items-baseline gap-3 mb-1">
+        <span class="font-ledger text-3xl font-bold" style="color:#34D399">02</span>
+        <h2 class="font-ledger text-2xl font-bold">Recipe Builder</h2>
+      </div>
+      <p class="text-sm mb-5" style="color:#CBBE9E">Assemble the recipe from your library. Batch cost, waste, labour and per-serving cost update live.</p>
+      <div class="grid grid-cols-2 gap-3">
+        <input id="recipe-name" class="field col-span-2" placeholder="Recipe name — e.g. Classic Chocolate Chip Cookies" maxlength="70" aria-label="Recipe name">
+        <div>
+          <label class="text-xs font-bold tracking-wide uppercase" style="color:#8f8468" for="recipe-servings">Servings / units per batch</label>
+          <input id="recipe-servings" class="field num mt-1" type="number" min="1" step="1" value="12" aria-label="Servings per batch">
+        </div>
+        <div>
+          <label class="text-xs font-bold tracking-wide uppercase" style="color:#8f8468" for="waste-pct">Waste &amp; spoilage %</label>
+          <input id="waste-pct" class="field num mt-1" type="number" min="0" max="200" step="0.5" value="5" aria-label="Waste percentage">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 items-end">
+        <select id="line-ing" class="field sm:col-span-2" aria-label="Choose ingredient"></select>
+        <input id="line-amount" class="field num" type="number" min="0" step="0.01" placeholder="Amount" aria-label="Amount used">
+        <select id="line-unit" class="field" aria-label="Amount unit"></select>
+      </div>
+      <button id="line-add" class="btn-gold w-full mt-3">+ Add ingredient to recipe</button>
+      <div id="line-error" class="text-sm mt-2 hidden" style="color:#F87171" role="alert"></div>
+      <div id="lines-list" class="mt-4 space-y-2"></div>
+
+      <div class="grid grid-cols-2 gap-3 mt-5 pt-5 border-t" style="border-color:rgba(251,191,36,.2)">
+        <div>
+          <label class="text-xs font-bold tracking-wide uppercase" style="color:#8f8468" for="labor-min">Labour minutes / batch</label>
+          <input id="labor-min" class="field num mt-1" type="number" min="0" step="1" value="45" aria-label="Labour minutes">
+        </div>
+        <div>
+          <label class="text-xs font-bold tracking-wide uppercase" style="color:#8f8468" for="labor-rate">Hourly rate</label>
+          <input id="labor-rate" class="field num mt-1" type="number" min="0" step="0.5" value="8" aria-label="Hourly labour rate">
+        </div>
+      </div>
+
+      <div id="batch-results" class="mt-5"></div>
+    </section>
+
+    <!-- ===== 03 · PRICING STRATEGY ===== -->
+    <section class="card p-5 sm:p-6" aria-label="Pricing strategy suggester">
+      <div class="flex items-baseline gap-3 mb-1">
+        <span class="font-ledger text-3xl font-bold" style="color:#FBBF24">03</span>
+        <h2 class="font-ledger text-2xl font-bold">Pricing Strategy Suggester</h2>
+      </div>
+      <p class="text-sm mb-5" style="color:#CBBE9E">Three ways to price the same serving. Tune the numbers — PlateProfit shows the margin math and recommends one.</p>
+      <div class="grid sm:grid-cols-3 gap-3" id="strategy-tabs" role="tablist" aria-label="Pricing strategies">
+        <div class="strat-tab active" data-strategy="cost-plus" role="tab" tabindex="0" aria-selected="true">
+          <div class="font-extrabold text-sm" style="color:#FBBF24">Cost-Plus</div>
+          <div class="text-xs mt-1" style="color:#CBBE9E">Markup × cost. The classic 3x bakery rule.</div>
+        </div>
+        <div class="strat-tab" data-strategy="market" role="tab" tabindex="0" aria-selected="false">
+          <div class="font-extrabold text-sm" style="color:#34D399">Market</div>
+          <div class="text-xs mt-1" style="color:#CBBE9E">Match competitors — but check the margin.</div>
+        </div>
+        <div class="strat-tab" data-strategy="premium" role="tab" tabindex="0" aria-selected="false">
+          <div class="font-extrabold text-sm" style="color:#F7EFDB">Premium</div>
+          <div class="text-xs mt-1" style="color:#CBBE9E">Higher markup for branded / custom work.</div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mt-4">
+        <div>
+          <label class="text-xs font-bold tracking-wide uppercase" style="color:#8f8468" for="markup-input">Markup %</label>
+          <input id="markup-input" class="field num mt-1" type="number" min="0" step="10" value="300" aria-label="Markup percent">
+        </div>
+        <div>
+          <label class="text-xs font-bold tracking-wide uppercase" style="color:#8f8468" for="market-price-input">Market price / serving</label>
+          <input id="market-price-input" class="field num mt-1" type="number" min="0" step="0.01" placeholder="e.g. 4.50" aria-label="Market price">
+        </div>
+        <div>
+          <label class="text-xs font-bold tracking-wide uppercase" style="color:#8f8468" for="min-margin-input">Min. margin % (market)</label>
+          <input id="min-margin-input" class="field num mt-1" type="number" min="0" max="95" step="1" value="40" aria-label="Minimum margin percent">
+        </div>
+        <div>
+          <label class="text-xs font-bold tracking-wide uppercase" style="color:#8f8468" for="round-select">Price rounding</label>
+          <select id="round-select" class="field mt-1" aria-label="Price rounding">
+            <option value="none">Exact (no rounding)</option>
+            <option value="point99" selected>Charm — x.99</option>
+            <option value="whole">Whole number</option>
+            <option value="nearest50">Nearest 50 (₹-style)</option>
+          </select>
+        </div>
+      </div>
+      <div id="pricing-results" class="mt-5 space-y-3"></div>
+    </section>
+
+    <!-- ===== 04 · STALL LABELS ===== -->
+    <section class="card p-5 sm:p-6" aria-label="Printable stall labels">
+      <div class="flex items-baseline gap-3 mb-1">
+        <span class="font-ledger text-3xl font-bold" style="color:#34D399">04</span>
+        <h2 class="font-ledger text-2xl font-bold">Stall Labels</h2>
+      </div>
+      <p class="text-sm mb-5" style="color:#CBBE9E">Ticket-style labels with your price, ingredients and notes — ready to print for the market stall.</p>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs font-bold tracking-wide uppercase" style="color:#8f8468" for="label-price">Label price / serving</label>
+          <input id="label-price" class="field num mt-1" type="number" min="0" step="0.01" placeholder="Uses recommended price" aria-label="Label price">
+        </div>
+        <div>
+          <label class="text-xs font-bold tracking-wide uppercase" style="color:#8f8468" for="label-count">Labels to print</label>
+          <input id="label-count" class="field num mt-1" type="number" min="1" max="24" step="1" value="6" aria-label="Number of labels">
+        </div>
+      </div>
+      <label class="text-xs font-bold tracking-wide uppercase mt-3 block" style="color:#8f8468" for="label-notes">Allergens / notes (printed on label)</label>
+      <input id="label-notes" class="field mt-1" placeholder="e.g. Contains: wheat, eggs, milk · Made in a home kitchen" maxlength="120" aria-label="Label notes">
+      <div class="flex gap-3 mt-4">
+        <button id="refresh-labels" class="btn-ghost flex-1">Refresh preview</button>
+        <button id="print-labels" class="btn-gold flex-1">🖨 Print labels</button>
+      </div>
+      <div id="label-preview" class="mt-5 grid sm:grid-cols-2 gap-4"></div>
+    </section>
+  </div>
+
+</main>
+
+<!-- BOTTOM AD (verbatim) -->
+<div class="no-print mx-auto max-w-6xl px-4 sm:px-6 pb-4" role="complementary" aria-label="Advertisement">
+  <div class="mx-auto text-center" style="max-width:728px">
+    <span class="block text-[10px] tracking-[0.18em] uppercase text-slate-400 mb-1.5">Advertisement</span>
+    <div class="flex justify-center overflow-hidden">
+      <script async src="https://js.wpadmngr.com/static/adManager.js" data-admpid="464498"></script>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SEO ARTICLE ============ -->
+<article id="seo-article" class="mx-auto max-w-3xl px-4 sm:px-6 pb-6 pt-8">
+  <h2>The Complete Guide to Recipe Costing for Home Food Sellers</h2>
+  <p>Every home bakery starts the same way: you bake something people love, friends say "you should sell these," and suddenly you are a business owner with no idea what to charge. Most new sellers guess. They look at what a local bakery charges, subtract a little to seem competitive, and hope the math works out. Months later they are exhausted, working for pennies an hour, and quietly subsidizing their customers' snacks. The fix is unglamorous but powerful: a proper <strong>recipe cost calculator</strong> workflow that turns your ingredient receipts into exact per-serving costs before you ever set a price.</p>
+  <p>This guide walks you through how to price homemade food to sell — from building an ingredient price library, to the three pricing strategies professionals use, to printing stall labels that make you look like the real business you are. Whether you run a weekend cupcake stall, a cookie subscription, or a full cottage-food operation from your kitchen, the same costing discipline applies.</p>
+
+  <h2>Why Most Home Bakeries Underprice (And How Costing Fixes It)</h2>
+  <p>The number one reason home food businesses fail is not bad recipes — it is bad pricing. A hobby baker mentally prices "a bag of flour and some chocolate chips" at roughly what the grocery run felt like, forgetting the butter, the vanilla, the eggs, the box, the label, the forty-five minutes of labour, and the batch that burned. Without a <strong>food cost calculator for home bakery</strong> use, these invisible costs never make it into the price, and every sale quietly loses money.</p>
+  <p>Professional kitchens solve this with food cost percentage: ingredient cost divided by selling price. Restaurants target 28 to 35 percent. Home sellers should aim for the same 25 to 35 percent band. That means if your cookies cost you $1.10 per serving all-in, your price should land between roughly $3.15 and $4.40. Sellers who skip costing often land at $2.50 "because that feels fair" — a 44 percent food cost that leaves almost nothing for labour, packaging, fees, and profit after a long market day.</p>
+  <p>The emotional trap is real. You feel guilty charging $4 for a cookie your neighbour could make at home. But your neighbour is not making it — you are, at 6 a.m., with your electricity, your equipment, and your skill. A recipe cost calculator removes the guilt by replacing feelings with numbers. When the ledger says your true cost is $1.38 per serving, charging $4.99 is not greedy; it is the minimum for a sustainable business.</p>
+
+  <h2>Step 1: Build Your Ingredient Price Library</h2>
+  <p>Costing one recipe at a time is exhausting, so professionals build an ingredient price library first: a single list where every ingredient you buy is recorded once with its pack price and pack size. Flour: $4.20 for 2 kg. Butter: $5.99 for 500 g. Eggs: $3.50 for a dozen. From those two numbers — price and quantity — the per-gram or per-item cost is pure division. Two kilograms is 2000 grams, so that flour costs $0.0021 per gram. A recipe using 250 grams of flour therefore carries $0.53 of flour cost. No estimates, no rounding from memory.</p>
+  <p>Three library habits separate profitable sellers from strugglers. First, <strong>record the price you actually paid</strong>, not the regular shelf price — sale prices change your cost and your margin, and a library makes it trivial to update one ingredient and re-cost every recipe that uses it. Second, <strong>use consistent base units</strong>: grams for solids, millilitres for liquids, items for eggs and fruit. Mixing cups and grams in the same recipe is how costing errors hide. Third, <strong>re-check prices quarterly</strong>. Butter and chocolate prices swing wildly; a library you update in five minutes keeps every recipe's cost honest without rebuilding anything.</p>
+  <p>PlateProfit's library does the unit conversion for you. Enter "16 oz" or "1 L" and it normalizes to per-gram or per-millilitre cost automatically, so a recipe line in cups and a pack priced in litres still reconcile perfectly — as long as both are volume measures. Weight and volume are never mixed, which is exactly the guardrail a spreadsheet will not give you.</p>
+
+  <h2>Step 2: Cost the Recipe, Including the Costs Everyone Forgets</h2>
+  <p>With the library in place, costing a recipe is mechanical: pick each ingredient, enter the amount the recipe uses, and add the lines. A 12-cookie batch might total $4.86 in ingredients, or $0.41 per cookie. But ingredients are only the headline. The full batch cost has three more layers, and this is where a real <strong>recipe cost calculator</strong> earns its keep.</p>
+  <h3>Waste and spoilage</h3>
+  <p>Trimming, testing, burnt edges, batter licked off the spoon, and the strawberries that went soft before market day — food businesses lose 5 to 10 percent of ingredients to waste as a matter of course. Add a waste allowance to every batch. On a $4.86 batch, 5 percent waste adds $0.24. It feels small per batch; across a year of market weekends it is the difference between profit and a hobby that pays for itself in compliments.</p>
+  <h3>Labour</h3>
+  <p>Your time is a cost even when you are the only employee. Track minutes per batch — mixing, baking, cooling, packing, cleaning — and multiply by an honest hourly rate. Forty-five minutes at $8 an hour adds $6.00 to that $4.86 batch, more than doubling the per-cookie cost to $0.91. Shocking? Good. That shock is precisely why labour belongs in the calculation before pricing, not as an afterthought you hope the margin covers.</p>
+  <h3>Packaging and fees</h3>
+  <p>Boxes, bags, ribbons, printed labels, market-stall fees, and payment processing (typically 2 to 3 percent) all come out of the same price. Fold a per-serving packaging cost into your recipe or add it as a line item; either way, price it deliberately instead of absorbing it silently.</p>
+
+  <h2>Step 3: Choose a Pricing Strategy (With Real Margin Math)</h2>
+  <p>Cost is a fact; price is a strategy. Three strategies cover nearly every home food business, and understanding the margin math behind each is what separates sellers who survive from sellers who thrive.</p>
+  <h3>Cost-plus pricing: the 3x rule</h3>
+  <p>Cost-plus multiplies your per-serving cost by a markup. The bakery classic is 3x — a 300 percent markup. On a $0.91 true cost, that gives $3.64. Note the margin math carefully: margin is measured on the <em>selling price</em>, not the cost. A 300 percent markup equals a 66.7 percent margin ($2.73 profit on a $3.64 price). Sellers routinely confuse markup with margin and leave money on the table; a calculator that shows both numbers prevents the error.</p>
+  <h3>Market pricing: compete without bleeding</h3>
+  <p>Market pricing starts from what customers already pay — the $4.50 cookie at the stall next to yours — and works backwards to the implied margin. If your cost is $0.91 and the market price is $4.50, your margin is 79.8 percent: healthy, take the market price. But if your cost is $2.80 and the market pays $4.00, your margin is only 30 percent — below the 40 percent floor most sellers need. The strategy then is not to match the price but to cut the cost, differentiate the product, or choose a different product. Market pricing without the margin check is just copying someone else's possibly-broken math.</p>
+  <h3>Premium pricing: charge for the story</h3>
+  <p>Premium pricing applies a higher markup — 400 to 600 percent — justified by branding, custom work, superior ingredients, or niche positioning (vegan, gluten-free, wedding tiers). The math is identical to cost-plus; the justification is the product story. A $0.91 cookie at a 500 percent markup prices at $5.46 with an 83.3 percent margin — defensible only if the packaging, presentation, and reputation support it. Premium pricing fails when the product looks ordinary; it wins when every touchpoint says "worth it."</p>
+  <p>PlateProfit runs all three strategies side by side on your live cost numbers and recommends one: market price wins when it clears your margin floor (competitive and healthy), otherwise cost-plus is the safe default. That recommendation updates the moment an ingredient price changes, so your prices can evolve with your costs instead of fossilizing at whatever you guessed on day one.</p>
+
+  <h2>A Worked Example: Pricing Cupcakes End to End</h2>
+  <p>Let us put the whole workflow together for a batch of 12 cupcakes. The ingredient library holds flour at $0.0021/g, sugar at $0.0018/g, butter at $0.012/g, eggs at $0.29 each, cocoa at $0.018/g, and milk at $0.0012/ml. The recipe uses 250 g flour ($0.53), 200 g sugar ($0.36), 120 g butter ($1.44), 2 eggs ($0.58), 40 g cocoa ($0.72), and 120 ml milk ($0.14): an ingredient total of $3.77.</p>
+  <p>Add 5 percent waste ($0.19) and 45 minutes of labour at $8/hour ($6.00). Batch total: $9.96. Per cupcake: $0.83. Food cost percentage at a $3.99 price is 20.8 percent — excellent headroom. Now the strategies: cost-plus at 300 percent markup suggests $3.32 (66.7 percent margin); market price of $4.50 implies a 81.6 percent margin and clears the floor easily, so it wins the recommendation; premium at 500 percent suggests $4.98 for a branded gift-box line. One recipe, three defensible prices, each with the margin spelled out. That is what it means to know <strong>how to price homemade food to sell</strong> instead of guessing.</p>
+
+  <h2>Stall Labels: The Silent Salesperson</h2>
+  <p>At a market, your label sells while you serve the next customer. The essentials: product name in large type, price readable from two metres away, net weight or serving count, full ingredient list, and allergen warnings (contains wheat, eggs, milk, tree nuts). Many cottage-food regulations also require a "made in a home kitchen not inspected" style statement — check your local rules and put the exact required wording on every label.</p>
+  <p>Two label mistakes cost real money. First, tiny prices: if shoppers must squint or ask, a fraction walk away. Second, missing allergen information: beyond the legal risk, clear allergen notes build trust with the growing share of customers who shop by dietary need. Print a few extras of every label; running out mid-market looks worse than overprinting by a dozen.</p>
+
+  <h2>Common Pricing Mistakes (And the Fixes)</h2>
+  <ul>
+    <li><strong>Pricing from the grocery receipt total</strong> instead of per-recipe usage. A $40 shop does not mean each batch cost $40.</li>
+    <li><strong>Forgetting the "free" ingredients</strong> — vanilla, salt, baking powder, and parchment add up across hundreds of batches.</li>
+    <li><strong>Confusing markup with margin.</strong> A 50 percent markup is only a 33 percent margin. Always compute margin on the selling price.</li>
+    <li><strong>Setting one price forever.</strong> Ingredient prices move; re-cost quarterly and adjust in small steps rather than shocking regulars with a sudden jump.</li>
+    <li><strong>Underpricing to "get customers."</strong> Cheap prices attract bargain hunters, not loyal fans — and they anchor your brand at a level you cannot sustain.</li>
+    <li><strong>Ignoring fees.</strong> A 3 percent card fee on a $4.50 sale is $0.14 of pure margin walking out the door on every transaction.</li>
+  </ul>
+
+  <h2>Scaling Up: From Costing to a Real Food Business</h2>
+  <p>Once costing is a habit, it compounds. Recipes with the best margins get promoted to hero products; low-margin favourites get re-engineered (cheaper garnish, simpler packaging) or retired. Seasonal ingredient swings become pricing decisions instead of surprises. Wholesale inquiries — the café that wants 200 cookies a week — stop being scary because you already know your per-unit cost and can quote a volume price with a protected margin in minutes.</p>
+  <p>Keep the discipline lightweight: one library, updated quarterly; every recipe costed once and re-checked when an ingredient price moves; prices reviewed against the three strategies twice a year. Fifteen minutes of ledger work a month is the cheapest business insurance a home food seller can buy. Start below with the free studio — build the library, cost your bestseller, and let the numbers tell you what to charge.</p>
+</article>
+
+<!-- ============ FAQs ============ -->
+<section class="no-print mx-auto max-w-3xl px-4 sm:px-6 pb-12" aria-label="Frequently asked questions">
+  <h2 class="font-ledger text-3xl font-bold mb-6 text-center" style="color:#FBBF24">Frequently Asked Questions</h2>
+  <div class="space-y-3">
+    <details class="faq card p-4">
+      <summary class="cursor-pointer font-bold flex items-center justify-between gap-3 list-none">How do I calculate the cost of a recipe for my home bakery? <span class="faq-plus text-xl" style="color:#FBBF24">+</span></summary>
+      <p class="text-sm mt-3 leading-relaxed" style="color:#CBBE9E">Divide each ingredient's pack price by its pack size to get a per-gram or per-millilitre cost, multiply by the amount your recipe uses, and add up all the lines. Divide the batch total by servings for the per-serving cost. PlateProfit's recipe cost calculator automates this: enter each ingredient once in the price library, build recipes from it, and see batch and per-serving costs instantly.</p>
+    </details>
+    <details class="faq card p-4">
+      <summary class="cursor-pointer font-bold flex items-center justify-between gap-3 list-none">What is a good food cost percentage for homemade food to sell? <span class="faq-plus text-xl" style="color:#FBBF24">+</span></summary>
+      <p class="text-sm mt-3 leading-relaxed" style="color:#CBBE9E">Aim for 25–35%. Food cost percentage is ingredient cost divided by selling price. That leaves 65–75% of every sale to cover labour, packaging, fees, and profit. Above 40%, your margin is too thin to survive a slow week — either raise the price or re-engineer the recipe.</p>
+    </details>
+    <details class="faq card p-4">
+      <summary class="cursor-pointer font-bold flex items-center justify-between gap-3 list-none">How do I price homemade food to sell — what margin should I aim for? <span class="faq-plus text-xl" style="color:#FBBF24">+</span></summary>
+      <p class="text-sm mt-3 leading-relaxed" style="color:#CBBE9E">Start from true per-serving cost, then choose: cost-plus (classic 3x markup = 66.7% margin), market pricing (match competitors only if the implied margin clears your 40% floor), or premium (higher markup for branded/custom products). PlateProfit compares all three on your live numbers and recommends the best strategy.</p>
+    </details>
+    <details class="faq card p-4">
+      <summary class="cursor-pointer font-bold flex items-center justify-between gap-3 list-none">Should I include labour, packaging, and waste in my recipe cost? <span class="faq-plus text-xl" style="color:#FBBF24">+</span></summary>
+      <p class="text-sm mt-3 leading-relaxed" style="color:#CBBE9E">Yes — ingredients are often only half the true cost. Add 5–10% for waste and spoilage, your labour minutes at a fair hourly rate, plus packaging, labels, stall fees, and card processing. PlateProfit's built-in waste and labour fields fold these straight into your per-serving cost.</p>
+    </details>
+    <details class="faq card p-4">
+      <summary class="cursor-pointer font-bold flex items-center justify-between gap-3 list-none">What should go on a homemade food stall label? <span class="faq-plus text-xl" style="color:#FBBF24">+</span></summary>
+      <p class="text-sm mt-3 leading-relaxed" style="color:#CBBE9E">Product name, large readable price, net weight or serving count, full ingredient list, and allergen warnings (wheat, eggs, milk, nuts). Many cottage-food rules also require a "made in a home kitchen" statement — check your local regulations. PlateProfit prints ticket-style labels with all of these fields.</p>
+    </details>
+    <details class="faq card p-4">
+      <summary class="cursor-pointer font-bold flex items-center justify-between gap-3 list-none">Is PlateProfit free to use? <span class="faq-plus text-xl" style="color:#FBBF24">+</span></summary>
+      <p class="text-sm mt-3 leading-relaxed" style="color:#CBBE9E">Yes — completely free with unlimited usage. No signup, no paywall, no watermark, and no limits on ingredients, recipes, or labels. Your library saves in your browser via local storage and all calculations happen on your device, so your recipes never leave your computer.</p>
+    </details>
+  </div>
+</section>
+
+<footer class="no-print border-t py-8 text-center text-sm" style="border-color:rgba(251,191,36,.2);color:#8f8468">
+  <div class="font-ledger text-xl font-bold mb-2" style="color:#FBBF24">PlateProfit</div>
+  <p>Free recipe costing studio for home food sellers · All calculations happen in your browser</p>
+</footer>
+<!-- Hidden print area: only labels render on paper -->
+<div id="print-area" class="hidden"></div>
+
+<script>
+/* PlateProfit UI wiring — DOM + localStorage live here (not in the pure lib). */
+(function () {
+  'use strict';
+
+  var LS_LIB = 'plateprofit-library-v1';
+  var LS_CUR = 'plateprofit-currency-v1';
+  var LS_RECIPE = 'plateprofit-recipe-v1';
+
+  function $(id) { return document.getElementById(id); }
+  function loadJSON(key, fallback) {
+    try { var v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+    catch (e) { return fallback; }
+  }
+  function saveJSON(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+  }
+
+  var state = {
+    library: loadJSON(LS_LIB, []),
+    lines: [],
+    currency: loadJSON(LS_CUR, 'USD'),
+    recipe: loadJSON(LS_RECIPE, null) || {}
+  };
+
+  function currency() {
+    for (var i = 0; i < PLATEPROFIT.CURRENCIES.length; i++) {
+      if (PLATEPROFIT.CURRENCIES[i].code === state.currency) return PLATEPROFIT.CURRENCIES[i];
+    }
+    return PLATEPROFIT.CURRENCIES[0];
+  }
+  function fmt(n) {
+    var c = currency();
+    return fmtMoney(n, c.symbol, c.code === 'JPY' ? 0 : 2);
+  }
+
+  /* ---------- static selects ---------- */
+  function fillUnits(sel, keep) {
+    var keys = Object.keys(PLATEPROFIT.UNITS);
+    sel.innerHTML = '';
+    keys.forEach(function (k) {
+      var o = document.createElement('option');
+      o.value = k; o.textContent = k;
+      sel.appendChild(o);
+    });
+    if (keep && keys.indexOf(keep) >= 0) sel.value = keep;
+  }
+  function fillCurrency() {
+    var sel = $('currency-select');
+    sel.innerHTML = '';
+    PLATEPROFIT.CURRENCIES.forEach(function (c) {
+      var o = document.createElement('option');
+      o.value = c.code; o.textContent = c.label;
+      sel.appendChild(o);
+    });
+    sel.value = state.currency;
+  }
+
+  /* ---------- library ---------- */
+  function persistLib() { saveJSON(LS_LIB, state.library); }
+
+  function renderLibrary() {
+    var list = $('lib-list');
+    list.innerHTML = '';
+    $('lib-empty').style.display = state.library.length ? 'none' : 'block';
+    state.library.forEach(function (row) {
+      var nice = nicePerBase(row.cpb, row.baseUnit, currency().symbol);
+      var div = document.createElement('div');
+      div.className = 'flex items-center justify-between gap-3 rounded-xl px-3 py-2.5';
+      div.style.cssText = 'background:#0C0A05;border:1px solid rgba(251,191,36,.18)';
+      div.innerHTML =
+        '<div class="min-w-0"><div class="font-bold text-sm truncate">' + escHtml(row.name) + '</div>' +
+        '<div class="text-xs num" style="color:#8f8468">' + escHtml(fmt(row.price)) + ' / ' + escHtml(String(row.qty)) + ' ' + escHtml(row.unit) +
+        ' · <span style="color:#34D399">' + escHtml(nice ? nice.text : '') + '</span></div></div>' +
+        '<button class="btn-ghost !px-3 !py-1.5 text-xs shrink-0" data-remove-lib="' + escHtml(row.id) + '">Remove</button>';
+      list.appendChild(div);
+    });
+    // ingredient picker in recipe builder
+    var sel = $('line-ing');
+    var prev = sel.value;
+    sel.innerHTML = '<option value="">— pick ingredient —</option>';
+    state.library.forEach(function (row) {
+      var o = document.createElement('option');
+      o.value = row.id; o.textContent = row.name;
+      sel.appendChild(o);
+    });
+    if (prev) sel.value = prev;
+  }
+
+  function addLibraryRow() {
+    var errBox = $('lib-error');
+    errBox.classList.add('hidden');
+    var row = {
+      name: $('lib-name').value,
+      price: $('lib-price').value,
+      qty: $('lib-qty').value,
+      unit: $('lib-unit').value
+    };
+    var res = libraryAdd(state.library, row);
+    if (res.error) {
+      errBox.textContent = res.error;
+      errBox.classList.remove('hidden');
+      return;
+    }
+    state.library = res.library;
+    persistLib();
+    renderLibrary();
+    $('lib-name').value = ''; $('lib-price').value = ''; $('lib-qty').value = '';
+    $('lib-name').focus();
+    recompute();
+  }
+
+  /* ---------- recipe ---------- */
+  function pricedLines() {
+    return state.lines.map(function (ln) {
+      var cost = lineCost(ln.cpb, ln.baseUnit, ln.amount, ln.unit);
+      return { name: ln.name, amount: ln.amount, unit: ln.unit, cost: cost };
+    });
+  }
+
+  function renderLines() {
+    var box = $('lines-list');
+    box.innerHTML = '';
+    if (!state.lines.length) {
+      box.innerHTML = '<div class="text-sm border border-dashed rounded-xl p-3 text-center" style="border-color:rgba(52,211,153,.35);color:#8f8468">No recipe lines yet — add ingredients above.</div>';
+      return;
+    }
+    state.lines.forEach(function (ln, i) {
+      var cost = lineCost(ln.cpb, ln.baseUnit, ln.amount, ln.unit);
+      var div = document.createElement('div');
+      div.className = 'flex items-center justify-between gap-3 rounded-xl px-3 py-2';
+      div.style.cssText = 'background:#0C0A05;border:1px solid rgba(52,211,153,.2)';
+      div.innerHTML =
+        '<div class="min-w-0"><div class="font-bold text-sm truncate">' + escHtml(ln.name) + '</div>' +
+        '<div class="text-xs num" style="color:#8f8468">' + escHtml(String(ln.amount)) + ' ' + escHtml(ln.unit) + '</div></div>' +
+        '<div class="flex items-center gap-3 shrink-0"><span class="num font-bold text-sm" style="color:#34D399">' + escHtml(cost === null ? '—' : fmt(cost)) + '</span>' +
+        '<button class="btn-ghost !px-2.5 !py-1 text-xs" data-remove-line="' + i + '">✕</button></div>';
+      box.appendChild(div);
+    });
+  }
+
+  function addRecipeLine() {
+    var errBox = $('line-error');
+    errBox.classList.add('hidden');
+    var row = libraryFind(state.library, $('line-ing').value);
+    var amount = $('line-amount').value;
+    var unit = $('line-unit').value;
+    var issues = recipeLineIssues(row, amount, unit);
+    if (issues.length) {
+      errBox.textContent = issues.join('; ');
+      errBox.classList.remove('hidden');
+      return;
+    }
+    state.lines.push({ id: row.id, name: row.name, cpb: row.cpb, baseUnit: row.baseUnit, amount: Number(amount), unit: unit });
+    $('line-amount').value = '';
+    renderLines();
+    persistRecipe();
+    recompute();
+  }
+
+  function inputs() {
+    return {
+      servings: $('recipe-servings').value,
+      wastePct: $('waste-pct').value,
+      laborMin: $('labor-min').value,
+      laborRate: $('labor-rate').value,
+      recipeName: $('recipe-name').value.trim()
+    };
+  }
+
+  function persistRecipe() {
+    var inp = inputs();
+    saveJSON(LS_RECIPE, {
+      name: inp.recipeName, servings: inp.servings, wastePct: inp.wastePct,
+      laborMin: inp.laborMin, laborRate: inp.laborRate, lines: state.lines
+    });
+  }
+
+  function computeAll() {
+    var inp = inputs();
+    var lines = pricedLines();
+    var b = batchCost(lines, inp.wastePct, { minutes: inp.laborMin, hourlyRate: inp.laborRate });
+    var ps = perServing(b.total, inp.servings);
+    var pricing = suggestPrices(ps === null ? 0 : ps, {
+      costPlusMarkup: $('markup-input').value,
+      marketPrice: $('market-price-input').value,
+      minMargin: $('min-margin-input').value,
+      premiumMarkup: 500,
+      roundMode: $('round-select').value
+    });
+    return { inp: inp, lines: lines, batch: b, perServing: ps, pricing: pricing };
+  }
+
+  function renderBatch(r) {
+    var box = $('batch-results');
+    if (r.lines.length === 0) {
+      box.innerHTML = '<div class="text-sm rounded-xl p-4 text-center border border-dashed" style="border-color:rgba(251,191,36,.3);color:#8f8468">Add recipe lines to see the batch ledger.</div>';
+      return;
+    }
+    function row(label, val, strong) {
+      return '<div class="flex justify-between py-1.5 ' + (strong ? 'font-extrabold text-base' : 'text-sm') + '" style="' + (strong ? 'color:#FBBF24;border-top:2px solid rgba(251,191,36,.4);margin-top:4px;padding-top:8px' : 'color:#EDE3C8;border-bottom:1px dotted rgba(251,191,36,.18)') + '">' +
+        '<span>' + label + '</span><span class="num">' + val + '</span></div>';
+    }
+    var psHtml = r.perServing === null
+      ? '<div class="text-sm mt-3 p-3 rounded-xl" style="background:rgba(248,113,113,.08);color:#F87171;border:1px solid rgba(248,113,113,.3)">Enter a valid servings count (1 or more) to see per-serving cost.</div>'
+      : '<div class="mt-4 rounded-xl p-4 text-center" style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.4)">' +
+        '<div class="text-xs font-bold tracking-widest uppercase" style="color:#CBBE9E">Cost per serving</div>' +
+        '<div class="font-ledger text-4xl font-bold num mt-1" style="color:#FBBF24">' + escHtml(fmt(r.perServing)) + '</div>' +
+        '<div class="text-xs mt-1 num" style="color:#8f8468">batch of ' + escHtml(String(r.inp.servings)) + ' servings</div></div>';
+    box.innerHTML =
+      '<div class="rounded-xl p-4 ledger-lines" style="background:#0C0A05;border:1px solid rgba(251,191,36,.25)">' +
+      '<div class="text-xs font-bold tracking-widest uppercase mb-2" style="color:#8f8468">Batch ledger</div>' +
+      row('Ingredients (' + r.lines.length + ' lines)', fmt(r.batch.ingredientCost)) +
+      row('Waste &amp; spoilage (' + escHtml(String($('waste-pct').value || 0)) + '%)', fmt(r.batch.wasteCost)) +
+      row('Labour', fmt(r.batch.laborCost)) +
+      row('Batch total', fmt(r.batch.total), true) +
+      '</div>' + psHtml;
+  }
+
+  function renderPricing(r) {
+    var box = $('pricing-results');
+    box.innerHTML = '';
+    if (r.perServing === null || r.perServing <= 0) {
+      box.innerHTML = '<div class="text-sm rounded-xl p-4 text-center border border-dashed" style="border-color:rgba(251,191,36,.3);color:#8f8468">Cost the recipe first — pricing strategies need a per-serving cost.</div>';
+      return;
+    }
+    var p = r.pricing;
+    function card(s, title, color, note) {
+      if (!s) {
+        return '<div class="rounded-xl p-4" style="background:#0C0A05;border:1px solid rgba(251,191,36,.18)">' +
+          '<div class="font-extrabold text-sm" style="color:' + color + '">' + title + '</div>' +
+          '<div class="text-xs mt-2" style="color:#8f8468">' + note + '</div></div>';
+      }
+      var rec = p.recommended === s.strategy
+        ? ' <span class="stamp ml-2">Recommended</span>' : '';
+      var extra = '';
+      if (s.strategy === 'cost-plus' || s.strategy === 'premium') {
+        extra = '<div class="text-xs num mt-1" style="color:#8f8468">markup ' + escHtml(String(Math.round(s.markupPct))) + '%</div>';
+      }
+      if (s.strategy === 'market') {
+        extra = s.clearsFloor
+          ? '<div class="text-xs mt-1 font-bold" style="color:#34D399">✓ clears your ' + escHtml(String(s.minMarginPct)) + '% margin floor</div>'
+          : '<div class="text-xs mt-1 font-bold" style="color:#F87171">✕ ' + escHtml(s.floorShortfall.toFixed(1)) + ' pts below your ' + escHtml(String(s.minMarginPct)) + '% floor — cut cost or differentiate</div>';
+      }
+      return '<div class="rounded-xl p-4 ' + (p.recommended === s.strategy ? 'card-hi' : '') + '" style="background:#0C0A05;border:1px solid rgba(251,191,36,.25)">' +
+        '<div class="font-extrabold text-sm" style="color:' + color + '">' + title + rec + '</div>' +
+        '<div class="flex items-baseline gap-3 mt-2"><span class="font-ledger text-3xl font-bold num" style="color:#F7EFDB">' + escHtml(fmt(s.price)) + '</span>' +
+        '<span class="text-xs num" style="color:#8f8468">per serving</span></div>' +
+        '<div class="text-sm num mt-2" style="color:#EDE3C8">margin <strong style="color:#34D399">' + escHtml(s.marginPct.toFixed(1)) + '%</strong>' +
+        ' · profit <strong style="color:#34D399">' + escHtml(fmt(s.profit)) + '</strong> / serving</div>' + extra +
+        '<div class="text-xs mt-2" style="color:#8f8468">' + note + '</div></div>';
+    }
+    box.innerHTML =
+      card(p.costPlus, 'Cost-Plus', '#FBBF24', 'Safe default: your cost × markup. The 3x rule keeps food cost near 25%.') +
+      card(p.market, 'Market', '#34D399', $('market-price-input').value ? 'Competitor price with your margin checked against the floor.' : 'Enter a market price above to compare against competitors.') +
+      card(p.premium, 'Premium', '#F7EFDB', 'For branded, gift-boxed, or custom work — charge for the story.');
+  }
+
+  /* ---------- labels ---------- */
+  function currentPrice(r) {
+    var manual = Number($('label-price').value);
+    if (isFinite(manual) && manual > 0) return manual;
+    var p = r.pricing;
+    var pick = p.recommended === 'market' && p.market ? p.market.price
+      : p.recommended === 'premium' && p.premium ? p.premium.price
+      : p.costPlus ? p.costPlus.price : null;
+    return pick;
+  }
+
+  function ticketHtml(m, forPrint) {
+    var marginLine = (!forPrint && m.marginPct !== null)
+      ? '<div class="text-[10px] mt-1 no-print" style="color:#8f8468">your margin: ' + m.marginPct.toFixed(1) + '% · profit ' + fmt(m.profitPerUnit) + '/unit</div>'
+      : '';
+    return '<div class="ticket flex overflow-hidden">' +
+      '<div class="flex-1 p-4">' +
+        '<div class="font-ledger font-bold text-lg leading-tight">' + escHtml(m.recipeName) + '</div>' +
+        (m.servings ? '<div class="text-xs mt-0.5" style="color:#5b5340">Batch makes ' + m.servings + ' servings</div>' : '') +
+        (m.ingredientsPreview ? '<div class="text-[11px] mt-2 leading-snug" style="color:#5b5340"><strong>Ingredients:</strong> ' + escHtml(m.ingredientsPreview) + '</div>' : '') +
+        (m.notes ? '<div class="text-[11px] mt-1.5 font-bold" style="color:#131009">' + escHtml(m.notes) + '</div>' : '') +
+      '</div>' +
+      '<div class="ticket-perf w-24 shrink-0 p-3 flex flex-col items-center justify-center text-center" style="background:rgba(251,191,36,.25)">' +
+        '<div class="text-[9px] font-bold tracking-widest uppercase" style="color:#5b5340">Price</div>' +
+        '<div class="font-ledger font-bold text-2xl num">' + escHtml(m.price === null ? '—' : fmt(m.price)) + '</div>' +
+      '</div></div>' + marginLine;
+  }
+
+  function renderLabels(r) {
+    var box = $('label-preview');
+    var names = r.lines.map(function (l) { return l.name; });
+    var m = labelModel(r.inp.recipeName || 'Unnamed Recipe', r.perServing, currentPrice(r), r.inp.servings, names, $('label-notes').value);
+    var n = Math.max(1, Math.min(24, Number($('label-count').value) || 6));
+    var html = '';
+    for (var i = 0; i < n; i++) html += ticketHtml(m, false);
+    box.innerHTML = html || '<div class="text-sm" style="color:#8f8468">Cost a recipe to generate labels.</div>';
+    return m;
+  }
+
+  function doPrint(r) {
+    var m = renderLabels(r);
+    var n = Math.max(1, Math.min(24, Number($('label-count').value) || 6));
+    var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px">';
+    for (var i = 0; i < n; i++) html += ticketHtml(m, true);
+    html += '</div>';
+    $('print-area').innerHTML = html;
+    window.print();
+  }
+
+  /* ---------- master recompute ---------- */
+  var lastResult = null;
+  function recompute() {
+    lastResult = computeAll();
+    renderBatch(lastResult);
+    renderPricing(lastResult);
+    if (!$('label-price').value && lastResult.pricing) {
+      var p = lastResult.pricing;
+      var pick = p.recommended === 'market' && p.market ? p.market.price
+        : p.recommended === 'premium' && p.premium ? p.premium.price
+        : p.costPlus ? p.costPlus.price : '';
+      $('label-price').placeholder = pick === '' ? 'Uses recommended price' : 'Recommended: ' + fmt(pick);
+    }
+    renderLabels(lastResult);
+    persistRecipe();
+  }
+
+  /* ---------- events ---------- */
+  function on(id, ev, fn) { $(id).addEventListener(ev, fn); }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    var remLib = t.getAttribute && t.getAttribute('data-remove-lib');
+    if (remLib) {
+      state.library = libraryRemove(state.library, remLib);
+      state.lines = state.lines.filter(function (ln) { return ln.id !== remLib; });
+      persistLib(); renderLibrary(); renderLines(); recompute();
+      return;
+    }
+    var remLine = t.getAttribute && t.getAttribute('data-remove-line');
+    if (remLine !== null && remLine !== undefined) {
+      state.lines.splice(Number(remLine), 1);
+      renderLines(); recompute();
+      return;
+    }
+    var tab = t.closest && t.closest('.strat-tab');
+    if (tab) {
+      document.querySelectorAll('.strat-tab').forEach(function (el) {
+        el.classList.remove('active'); el.setAttribute('aria-selected', 'false');
+      });
+      tab.classList.add('active'); tab.setAttribute('aria-selected', 'true');
+    }
+  });
+
+  on('lib-add', 'click', addLibraryRow);
+  ['lib-name', 'lib-price', 'lib-qty'].forEach(function (id) {
+    on(id, 'keydown', function (e) { if (e.key === 'Enter') addLibraryRow(); });
+  });
+  on('lib-clear', 'click', function () {
+    if (!state.library.length) return;
+    if (confirm('Remove all ingredients from the library?')) {
+      state.library = []; state.lines = [];
+      persistLib(); renderLibrary(); renderLines(); recompute();
+    }
+  });
+  on('line-add', 'click', addRecipeLine);
+  on('currency-select', 'change', function () {
+    state.currency = $('currency-select').value;
+    saveJSON(LS_CUR, state.currency);
+    renderLibrary(); recompute();
+  });
+  ['recipe-servings', 'waste-pct', 'labor-min', 'labor-rate', 'markup-input', 'market-price-input', 'min-margin-input', 'label-count', 'label-notes'].forEach(function (id) {
+    on(id, 'input', recompute);
+  });
+  on('round-select', 'change', recompute);
+  on('recipe-name', 'input', function () { renderLabels(lastResult || computeAll()); persistRecipe(); });
+  on('label-price', 'input', function () { renderLabels(lastResult || computeAll()); });
+  on('refresh-labels', 'click', function () { recompute(); });
+  on('print-labels', 'click', function () { doPrint(lastResult || computeAll()); });
+
+  /* ---------- init ---------- */
+  fillUnits($('lib-unit'));
+  fillUnits($('line-unit'), 'g');
+  fillCurrency();
+  if (state.recipe) {
+    $('recipe-name').value = state.recipe.name || '';
+    $('recipe-servings').value = state.recipe.servings || 12;
+    $('waste-pct').value = state.recipe.wastePct != null ? state.recipe.wastePct : 5;
+    $('labor-min').value = state.recipe.laborMin != null ? state.recipe.laborMin : 45;
+    $('labor-rate').value = state.recipe.laborRate != null ? state.recipe.laborRate : 8;
+    state.lines = Array.isArray(state.recipe.lines) ? state.recipe.lines : [];
+  }
+  renderLibrary();
+  renderLines();
+  recompute();
+})();
+</script>
+</body>
+</html>
